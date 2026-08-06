@@ -33,9 +33,9 @@ edges, matching the graph that the classifier evaluates.
 
 - 🧠 **k-NN from scratch** — No scikit-learn; core algorithm hand-implemented
 - 📐 **Leakage-aware graph features** — Clustering coefficient and average neighbor degree; the label-defining node degree is never an input feature
-- 📊 **Multi-k evaluation** — Tests k = 1, 3, 5, 7, 9
-- 📈 **Evaluation metrics** — Macro-F1 and Micro-F1 scores
-- ⏱️ **Efficiency benchmarks** — Running time analysis per k value
+- 📊 **Stratified cross-validation** — Reproducible five-fold evaluation for k = 1, 3, 5, 7, 9
+- 📈 **Evaluation metrics** — Mean Macro-F1 and Micro-F1 with fold-to-fold variability
+- ⏱️ **Efficiency benchmarks** — Mean inference time per fold with variability
 - 📉 **Scalability testing** — Linear-time BFS sampling and a low-cost, non-label feature for the optional large dataset
 - ✅ **Regression tests and CI** — Offline unit coverage on Python 3.10 and 3.12
 - 📊 **Auto-generated plots** — Effectiveness, efficiency, and scalability charts
@@ -43,6 +43,17 @@ edges, matching the graph that the classifier evaluates.
 ---
 
 ## 📈 Results
+
+The included CA-GrQc dataset produces these deterministic five-fold results
+with seed 42. Values are the mean ± one standard deviation across folds.
+
+| k | Macro-F1 | Micro-F1 |
+|---:|---:|---:|
+| 1 | 0.9070 ± 0.0147 | 0.9098 ± 0.0142 |
+| 3 | 0.9033 ± 0.0112 | 0.9069 ± 0.0110 |
+| 5 | 0.8925 ± 0.0175 | 0.8966 ± 0.0169 |
+| 7 | 0.8888 ± 0.0105 | 0.8930 ± 0.0102 |
+| 9 | 0.8900 ± 0.0137 | 0.8947 ± 0.0133 |
 
 ### Effectiveness (F1 Scores)
 <img src="results/effectiveness.png" width="600"/>
@@ -57,7 +68,16 @@ The target is intentionally synthetic rather than a real-world node category.
 The main evaluation uses clustering coefficient and average neighbor degree;
 the scalability benchmark uses average neighbor degree alone to keep feature
 extraction inexpensive. Neither path includes the node degree that defines the
-target, avoiding direct target leakage. Runtime values are machine-dependent.
+target, avoiding direct target leakage. The main results use deterministic,
+stratified five-fold cross-validation, with normalization fit independently on
+each training fold. Error bars show one standard deviation across folds.
+Runtime values are machine-dependent.
+
+This is a transductive graph evaluation: features are computed from the full
+graph topology before labels are divided into folds. Test labels never enter
+training, but held-out nodes remain part of the network used to calculate
+structural features. The results demonstrate the custom pipeline on a
+transparent synthetic task; they are not claims about a real-world category.
 
 ---
 
@@ -82,8 +102,8 @@ The script will:
 1. Load the graph dataset
 2. Extract node features (clustering coefficient, avg neighbor degree)
 3. Generate labels based on degree threshold
-4. Run k-NN classification for k = 1, 3, 5, 7, 9
-5. Output F1 scores and timing results
+4. Run five-fold stratified cross-validation for k = 1, 3, 5, 7, 9
+5. Output mean F1 scores, variability, and inference timing
 6. Save plots to `results/`
 
 The larger com-DBLP scalability benchmark is optional because the dataset is
@@ -99,8 +119,9 @@ python -m unittest discover -s tests -v
 ```
 
 The tests cover dataset metadata, the leakage guard, BFS sampling, deterministic
-splitting, and the hand-written k-NN predictor. GitHub Actions runs the same
-offline suite on Python 3.10 and 3.12.
+stratification, fold coverage, cross-validation summaries, and the hand-written
+k-NN predictor. GitHub Actions runs the same offline suite on Python 3.10 and
+3.12.
 
 ---
 
@@ -118,7 +139,8 @@ Raw Graph (edge list)
 Feature Matrix [n_nodes × 2]
     │
     ├── Label: degree > median → 1 (high), else → 0 (low)
-    └── Split: 70% train / 30% test
+    ├── Split: stratified 5-fold cross-validation
+    └── Normalize: fit separately on each training fold
     │
     ▼
 k-NN Classification (Euclidean distance)

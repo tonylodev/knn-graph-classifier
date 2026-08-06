@@ -91,6 +91,11 @@ def normalize(X_train, X_test):
 
 
 def knn_predict(X_train, y_train, X_test, k):
+    if not isinstance(k, (int, np.integer)) or isinstance(k, bool) or k < 1:
+        raise ValueError("k must be a positive integer")
+    if k > len(X_train):
+        raise ValueError("k cannot exceed the number of training samples")
+
     preds = []
     for i in range(len(X_test)):
         dists = np.sqrt(np.sum((X_train - X_test[i]) ** 2, axis=1))
@@ -133,13 +138,117 @@ def compute_f1(y_true, y_pred):
 
 
 def split_data(X, y, test_ratio=0.3, seed=42):
-    np.random.seed(seed)
-    n = len(X)
-    indices = np.random.permutation(n)
-    test_size = int(n * test_ratio)
-    test_idx = indices[:test_size]
-    train_idx = indices[test_size:]
+    """Create a reproducible stratified holdout without changing global RNG state."""
+    X = np.asarray(X)
+    y = np.asarray(y)
+
+    if len(X) != len(y) or len(y) == 0:
+        raise ValueError("X and y must contain the same non-zero number of samples")
+    if not 0 < test_ratio < 1:
+        raise ValueError("test_ratio must be between 0 and 1")
+
+    rng = np.random.default_rng(seed)
+    train_parts = []
+    test_parts = []
+
+    for class_label in np.unique(y):
+        class_indices = np.flatnonzero(y == class_label)
+        if len(class_indices) < 2:
+            raise ValueError("each class needs at least two samples for a holdout split")
+
+        rng.shuffle(class_indices)
+        test_size = int(round(len(class_indices) * test_ratio))
+        test_size = min(max(test_size, 1), len(class_indices) - 1)
+        test_parts.append(class_indices[:test_size])
+        train_parts.append(class_indices[test_size:])
+
+    train_idx = np.concatenate(train_parts)
+    test_idx = np.concatenate(test_parts)
+    rng.shuffle(train_idx)
+    rng.shuffle(test_idx)
     return X[train_idx], X[test_idx], y[train_idx], y[test_idx]
+
+
+def stratified_k_fold_indices(y, n_splits=5, seed=42):
+    """Return deterministic folds that preserve each class distribution."""
+    y = np.asarray(y)
+
+    if y.ndim != 1 or len(y) == 0:
+        raise ValueError("y must be a non-empty one-dimensional array")
+    if not isinstance(n_splits, (int, np.integer)) or isinstance(n_splits, bool):
+        raise ValueError("n_splits must be an integer")
+    if n_splits < 2:
+        raise ValueError("n_splits must be at least 2")
+
+    classes, class_counts = np.unique(y, return_counts=True)
+    if np.any(class_counts < n_splits):
+        raise ValueError("each class needs at least n_splits samples")
+
+    rng = np.random.default_rng(seed)
+    test_folds = [[] for _ in range(n_splits)]
+
+    for class_label in classes:
+        class_indices = np.flatnonzero(y == class_label)
+        rng.shuffle(class_indices)
+        for fold_index, chunk in enumerate(np.array_split(class_indices, n_splits)):
+            test_folds[fold_index].extend(chunk.tolist())
+
+    all_indices = np.arange(len(y))
+    folds = []
+    for test_fold in test_folds:
+        test_idx = np.asarray(test_fold, dtype=int)
+        rng.shuffle(test_idx)
+        train_idx = np.setdiff1d(all_indices, test_idx, assume_unique=True)
+        folds.append((train_idx, test_idx))
+
+    return folds
+
+
+def evaluate_cross_validation(X, y, k_values, n_splits=5, seed=42):
+    """Evaluate each k with fold-specific normalization and return summaries."""
+    X = np.asarray(X)
+    y = np.asarray(y)
+    if len(X) != len(y):
+        raise ValueError("X and y must contain the same number of samples")
+
+    folds = stratified_k_fold_indices(y, n_splits=n_splits, seed=seed)
+    smallest_training_fold = min(len(train_idx) for train_idx, _ in folds)
+    results = []
+
+    for k in k_values:
+        if k > smallest_training_fold:
+            raise ValueError("k cannot exceed the number of samples in a training fold")
+
+        macro_folds = []
+        micro_folds = []
+        time_folds = []
+
+        for train_idx, test_idx in folds:
+            X_train_n, X_test_n = normalize(X[train_idx], X[test_idx])
+
+            t0 = time.perf_counter()
+            y_pred = knn_predict(X_train_n, y[train_idx], X_test_n, k)
+            elapsed = time.perf_counter() - t0
+
+            macro_f1, micro_f1 = compute_f1(
+                y[test_idx].tolist(),
+                y_pred.tolist(),
+            )
+            macro_folds.append(macro_f1)
+            micro_folds.append(micro_f1)
+            time_folds.append(elapsed)
+
+        results.append({
+            'k': k,
+            'macro_mean': float(np.mean(macro_folds)),
+            'macro_std': float(np.std(macro_folds)),
+            'micro_mean': float(np.mean(micro_folds)),
+            'micro_std': float(np.std(micro_folds)),
+            'time_mean': float(np.mean(time_folds)),
+            'time_std': float(np.std(time_folds)),
+        })
+
+    return results
 
 
 if __name__ == '__main__':
@@ -156,35 +265,53 @@ if __name__ == '__main__':
     print("Feature matrix shape:", X.shape)
     print("Class distribution:", Counter(y.tolist()))
 
-    X_train, X_test, y_train, y_test = split_data(X, y)
-    X_train_n, X_test_n = normalize(X_train, X_test)
-
     # effectiveness test
-    print("\n--- Effectiveness Test (CA-GrQc) ---")
+    print("\n--- Effectiveness Test (CA-GrQc, 5-fold stratified CV) ---")
     k_values = [1, 3, 5, 7, 9]
-    macro_scores = []
-    micro_scores = []
-    run_times = []
+    cv_results = evaluate_cross_validation(X, y, k_values, n_splits=5, seed=42)
+    macro_scores = [result['macro_mean'] for result in cv_results]
+    macro_stds = [result['macro_std'] for result in cv_results]
+    micro_scores = [result['micro_mean'] for result in cv_results]
+    micro_stds = [result['micro_std'] for result in cv_results]
+    run_times = [result['time_mean'] for result in cv_results]
+    run_time_stds = [result['time_std'] for result in cv_results]
 
-    for k in k_values:
-        t0 = time.time()
-        y_pred = knn_predict(X_train_n, y_train, X_test_n, k)
-        t1 = time.time()
-
-        macro_f1, micro_f1 = compute_f1(y_test.tolist(), y_pred.tolist())
-        macro_scores.append(macro_f1)
-        micro_scores.append(micro_f1)
-        run_times.append(t1 - t0)
-
-        print("k=%d: Macro-F1=%.4f, Micro-F1=%.4f, Time=%.2fs" % (k, macro_f1, micro_f1, t1 - t0))
+    for result in cv_results:
+        print(
+            "k=%d: Macro-F1=%.4f +/- %.4f, Micro-F1=%.4f +/- %.4f, "
+            "Mean inference time=%.2fs"
+            % (
+                result['k'],
+                result['macro_mean'],
+                result['macro_std'],
+                result['micro_mean'],
+                result['micro_std'],
+                result['time_mean'],
+            )
+        )
 
     # plot effectiveness
     fig, ax = plt.subplots(figsize=(8, 5))
-    ax.plot(k_values, macro_scores, 'o-', label='Macro-F1')
-    ax.plot(k_values, micro_scores, 's-', label='Micro-F1')
+    ax.errorbar(
+        k_values,
+        macro_scores,
+        yerr=macro_stds,
+        fmt='o-',
+        capsize=4,
+        label='Macro-F1',
+    )
+    ax.errorbar(
+        k_values,
+        micro_scores,
+        yerr=micro_stds,
+        fmt='s-',
+        capsize=4,
+        label='Micro-F1',
+    )
+    ax.set_xticks(k_values)
     ax.set_xlabel('k')
     ax.set_ylabel('F1 Score')
-    ax.set_title('k-NN Effectiveness on CA-GrQc')
+    ax.set_title('k-NN Effectiveness on CA-GrQc (5-fold CV)')
     ax.legend()
     ax.grid(True)
     plt.tight_layout()
@@ -194,10 +321,16 @@ if __name__ == '__main__':
 
     # plot efficiency
     fig, ax = plt.subplots(figsize=(8, 5))
-    ax.bar([str(k) for k in k_values], run_times, color='steelblue')
+    ax.bar(
+        [str(k) for k in k_values],
+        run_times,
+        yerr=run_time_stds,
+        capsize=4,
+        color='steelblue',
+    )
     ax.set_xlabel('k')
-    ax.set_ylabel('Running Time (seconds)')
-    ax.set_title('k-NN Efficiency on CA-GrQc')
+    ax.set_ylabel('Mean Inference Time per Fold (seconds)')
+    ax.set_title('k-NN Efficiency on CA-GrQc (5-fold CV)')
     ax.grid(True, axis='y')
     plt.tight_layout()
     plt.savefig(RESULTS_DIR / 'efficiency.png', dpi=150)
