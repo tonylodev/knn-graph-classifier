@@ -91,7 +91,7 @@ pip install -r requirements.txt
 ### Run
 ```bash
 # Clone the repository
-git clone https://github.com/tonytheg/knn-graph-classifier.git
+git clone https://github.com/tonylodev/knn-graph-classifier.git
 cd knn-graph-classifier
 
 # Run the included CA-GrQc evaluation
