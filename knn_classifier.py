@@ -251,6 +251,32 @@ def evaluate_cross_validation(X, y, k_values, n_splits=5, seed=42):
     return results
 
 
+def evaluate_majority_baseline(y, n_splits=5, seed=42):
+    """Evaluate a train-fold majority classifier on the same stratified folds."""
+    y = np.asarray(y)
+    folds = stratified_k_fold_indices(y, n_splits=n_splits, seed=seed)
+    macro_folds = []
+    micro_folds = []
+
+    for train_idx, test_idx in folds:
+        classes, counts = np.unique(y[train_idx], return_counts=True)
+        majority_class = classes[np.argmax(counts)]
+        predictions = np.full(len(test_idx), majority_class)
+        macro_f1, micro_f1 = compute_f1(
+            y[test_idx].tolist(),
+            predictions.tolist(),
+        )
+        macro_folds.append(macro_f1)
+        micro_folds.append(micro_f1)
+
+    return {
+        'macro_mean': float(np.mean(macro_folds)),
+        'macro_std': float(np.std(macro_folds)),
+        'micro_mean': float(np.mean(micro_folds)),
+        'micro_std': float(np.std(micro_folds)),
+    }
+
+
 if __name__ == '__main__':
     os.makedirs(RESULTS_DIR, exist_ok=True)
 
@@ -269,6 +295,7 @@ if __name__ == '__main__':
     print("\n--- Effectiveness Test (CA-GrQc, 5-fold stratified CV) ---")
     k_values = [1, 3, 5, 7, 9]
     cv_results = evaluate_cross_validation(X, y, k_values, n_splits=5, seed=42)
+    baseline = evaluate_majority_baseline(y, n_splits=5, seed=42)
     macro_scores = [result['macro_mean'] for result in cv_results]
     macro_stds = [result['macro_std'] for result in cv_results]
     micro_scores = [result['micro_mean'] for result in cv_results]
@@ -289,6 +316,16 @@ if __name__ == '__main__':
                 result['time_mean'],
             )
         )
+    print(
+        "Majority baseline: Macro-F1=%.4f +/- %.4f, "
+        "Micro-F1=%.4f +/- %.4f"
+        % (
+            baseline['macro_mean'],
+            baseline['macro_std'],
+            baseline['micro_mean'],
+            baseline['micro_std'],
+        )
+    )
 
     # plot effectiveness
     fig, ax = plt.subplots(figsize=(8, 5))
@@ -307,6 +344,20 @@ if __name__ == '__main__':
         fmt='s-',
         capsize=4,
         label='Micro-F1',
+    )
+    ax.axhline(
+        baseline['macro_mean'],
+        color='tab:blue',
+        linestyle='--',
+        alpha=0.7,
+        label='Majority baseline (Macro-F1)',
+    )
+    ax.axhline(
+        baseline['micro_mean'],
+        color='tab:orange',
+        linestyle='--',
+        alpha=0.7,
+        label='Majority baseline (Micro-F1)',
     )
     ax.set_xticks(k_values)
     ax.set_xlabel('k')

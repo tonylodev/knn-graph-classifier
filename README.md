@@ -34,6 +34,7 @@ edges, matching the graph that the classifier evaluates.
 - 🧠 **k-NN from scratch** — No scikit-learn; core algorithm hand-implemented
 - 📐 **Leakage-aware graph features** — Clustering coefficient and average neighbor degree; the label-defining node degree is never an input feature
 - 📊 **Stratified cross-validation** — Reproducible five-fold evaluation for k = 1, 3, 5, 7, 9
+- 🎯 **Majority-class baseline** — Fold-consistent reference scores show whether the model beats class prevalence
 - 📈 **Evaluation metrics** — Mean Macro-F1 and Micro-F1 with fold-to-fold variability
 - ⏱️ **Efficiency benchmarks** — Mean inference time per fold with variability
 - 📉 **Scalability testing** — Linear-time BFS sampling and a low-cost, non-label feature for the optional large dataset
@@ -55,6 +56,11 @@ with seed 42. Values are the mean ± one standard deviation across folds.
 | 7 | 0.8888 ± 0.0105 | 0.8930 ± 0.0102 |
 | 9 | 0.8900 ± 0.0137 | 0.8947 ± 0.0133 |
 
+The train-fold majority-class baseline scores **0.3705 ± 0.0001 Macro-F1**
+and **0.5885 ± 0.0003 Micro-F1**. The best tested model (`k=1`) improves
+on that reference by 0.5365 Macro-F1 and 0.3213 Micro-F1, making the model's
+value visible instead of presenting its scores without context.
+
 ### Effectiveness (F1 Scores)
 <img src="results/effectiveness.png" width="600"/>
 
@@ -70,7 +76,9 @@ the scalability benchmark uses average neighbor degree alone to keep feature
 extraction inexpensive. Neither path includes the node degree that defines the
 target, avoiding direct target leakage. The main results use deterministic,
 stratified five-fold cross-validation, with normalization fit independently on
-each training fold. Error bars show one standard deviation across folds.
+each training fold. The majority class is also selected independently from each
+training fold. Error bars show one standard deviation across folds, and dashed
+lines in the effectiveness chart show the baseline scores.
 Runtime values are machine-dependent.
 
 This is a transductive graph evaluation: features are computed from the full
@@ -119,9 +127,9 @@ python -m unittest discover -s tests -v
 ```
 
 The tests cover dataset metadata, the leakage guard, BFS sampling, deterministic
-stratification, fold coverage, cross-validation summaries, and the hand-written
-k-NN predictor. GitHub Actions runs the same offline suite on Python 3.10 and
-3.12.
+stratification, fold coverage, cross-validation summaries, majority-baseline
+evaluation, and the hand-written k-NN predictor. GitHub Actions runs the same
+offline suite on Python 3.10 and 3.12.
 
 ---
 

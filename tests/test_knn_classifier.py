@@ -7,6 +7,7 @@ from knn_classifier import (
     DATA_DIR,
     bfs_sample,
     evaluate_cross_validation,
+    evaluate_majority_baseline,
     extract_features_fast,
     knn_predict,
     load_graph,
@@ -85,6 +86,16 @@ class KnnClassifierTests(unittest.TestCase):
             self.assertAlmostEqual(result['macro_mean'], 1.0)
             self.assertAlmostEqual(result['micro_mean'], 1.0)
             self.assertGreaterEqual(result['time_mean'], 0.0)
+
+    def test_majority_baseline_is_fit_on_each_training_fold(self):
+        labels = np.array([0] * 12 + [1] * 8)
+
+        result = evaluate_majority_baseline(labels, n_splits=4, seed=7)
+
+        self.assertAlmostEqual(result['macro_mean'], 0.375)
+        self.assertAlmostEqual(result['macro_std'], 0.0)
+        self.assertAlmostEqual(result['micro_mean'], 0.6)
+        self.assertAlmostEqual(result['micro_std'], 0.0)
 
     def test_knn_predicts_nearest_class(self):
         train_features = np.array([[0.0], [0.2], [0.8], [1.0]])
