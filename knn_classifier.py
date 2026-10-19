@@ -107,6 +107,19 @@ def knn_predict(X_train, y_train, X_test, k):
 
 
 def compute_f1(y_true, y_pred):
+    """Return Macro-F1 and Micro-F1 for aligned single-label predictions.
+
+    Include classes present in either input, assigning zero F1 when a class
+    has no true positives. Reject incomplete predictions before zip can
+    silently truncate them and produce misleading scores.
+    """
+    y_true = np.asarray(y_true)
+    y_pred = np.asarray(y_pred)
+    if y_true.ndim != 1 or y_pred.ndim != 1:
+        raise ValueError("y_true and y_pred must be one-dimensional arrays")
+    if len(y_true) != len(y_pred) or len(y_true) == 0:
+        raise ValueError("y_true and y_pred must contain the same non-zero number of samples")
+
     classes = sorted(set(y_true) | set(y_pred))
 
     f1_scores = []

@@ -128,8 +128,11 @@ python -m unittest discover -s tests -v
 
 The tests cover dataset metadata, the leakage guard, BFS sampling, deterministic
 stratification, fold coverage, cross-validation summaries, majority-baseline
-evaluation, and the hand-written k-NN predictor. GitHub Actions runs the same
-offline suite on Python 3.10 and 3.12.
+evaluation, and the hand-written k-NN predictor. Metric tests check F1 against a
+hand-calculated multiclass confusion matrix, classes missing from either input,
+and the single-label Micro-F1/accuracy identity. Empty, mismatched, scalar, or
+multidimensional metric inputs raise `ValueError` instead of producing a score.
+GitHub Actions runs the same offline suite on Python 3.10 and 3.12.
 
 ---
 
@@ -172,7 +175,8 @@ knn-graph-classifier/
 ├── knn_classifier.py    # Main pipeline: feature extraction, k-NN, evaluation
 ├── requirements.txt     # Python runtime dependencies
 ├── tests/
-│   └── test_knn_classifier.py # Offline regression tests
+│   ├── test_knn_classifier.py # Pipeline regression tests
+│   └── test_metrics.py    # Hand-calculated F1 and invalid-input checks
 ├── .github/workflows/test.yml # Python CI matrix
 ├── data/
 │   └── CA-GrQc.txt      # Small dataset (Arxiv collaborations)
